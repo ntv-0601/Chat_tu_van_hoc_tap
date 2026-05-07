@@ -1,0 +1,448 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Send, 
+  User, 
+  Bot, 
+  BookOpen, 
+  GraduationCap, 
+  Calendar, 
+  Target, 
+  Menu, 
+  X,
+  MessageSquare,
+  Sparkles,
+  ChevronRight,
+  ClipboardList,
+  ShieldCheck
+} from 'lucide-react';
+
+const SYSTEM_PROMPT = `
+You are 'Academia High', a specialized counselor for students preparing for High School Entrance Exams.
+Your goal is to guide students through the registration process, school selection, and exam preparation.
+Guidelines:
+1. Provide expert advice on registering for entrance exams, including deadline reminders and required documentation.
+2. Help students evaluate different types of high schools (e.g., STEM focus, Arts, General, Vocational).
+3. Offer study strategies specifically for high-stakes entrance testing.
+4. Be encouraging and help manage the stress of this transition.
+5. Use structured bullet points for registration steps.
+6. Always remind students to check their local Department of Education website for specific district deadlines.
+`;
+
+const INITIAL_MESSAGE = {
+  role: 'assistant',
+  content: "Welcome to Academia High. I'm here to help you navigate your high school entrance exams. Are you looking for advice on the registration process, choosing the right school, or creating a study schedule for the upcoming tests?"
+};
+
+const App = () => {
+  const [messages, setMessages] = useState([INITIAL_MESSAGE]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState({
+    name: 'Student',
+    schoolType: 'Public High School',
+    year: 'Grade 9',
+    goals: ['Exam Prep']
+  });
+  const [activeTab, setActiveTab] = useState('chat');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const callGemini = async (userQuery, history) => {
+    const apiKey = ""; 
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    const chatHistory = history.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
+
+    const payload = {
+      contents: chatHistory,
+      systemInstruction: {
+        parts: [{ text: `${SYSTEM_PROMPT}\nStudent Context: Name: ${userProfile.name}, Target School: ${userProfile.schoolType}, Current Grade: ${userProfile.year}.` }]
+      }
+    };
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) throw new Error('API request failed');
+      
+      const result = await response.json();
+      return result.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having trouble thinking right now. Please try again.";
+    } catch (error) {
+      console.error("Gemini Error:", error);
+      return "I encountered an error connecting to my knowledge base. Please check your registration details and try again.";
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = { role: 'user', content: input };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput('');
+    setIsLoading(true);
+
+    const aiResponse = await callGemini(input, newMessages);
+    
+    setMessages([...newMessages, { role: 'assistant', content: aiResponse }]);
+    setIsLoading(false);
+  };
+
+  const Sidebar = () => (
+    <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
+      <div className="flex flex-col h-full">
+        <div className="p-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
+              <ShieldCheck size={24} />
+            </div>
+            <span className="text-xl font-bold tracking-tight">Academia High</span>
+          </div>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden">
+            <X size={24} />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-4 py-4 space-y-2">
+          {[
+            { id: 'chat', label: 'Exam Counseling', icon: MessageSquare },
+            { id: 'planner', label: 'Prep Roadmap', icon: Calendar },
+            { id: 'profile', label: 'Applicant Profile', icon: User },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === item.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <item.icon size={20} />
+              <span className="font-medium">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 mt-auto">
+          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold">
+                {userProfile.name[0]}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{userProfile.name}</p>
+                <p className="text-xs text-slate-400">{userProfile.year}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const ChatTab = () => (
+    <div className="flex flex-col h-full max-w-4xl mx-auto w-full relative">
+      <div 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 scroll-smooth"
+      >
+        {messages.map((msg, idx) => (
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex gap-3 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${msg.role === 'user' ? 'bg-blue-600' : 'bg-slate-200 text-slate-700'}`}>
+                {msg.role === 'user' ? <User size={16} className="text-white" /> : <Bot size={16} />}
+              </div>
+              <div className={`p-4 rounded-2xl shadow-sm border ${
+                msg.role === 'user' 
+                  ? 'bg-blue-600 text-white border-blue-500 rounded-tr-none' 
+                  : 'bg-white text-slate-800 border-slate-100 rounded-tl-none'
+              }`}>
+                <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {msg.content}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="flex gap-3 items-center text-slate-400 text-sm italic">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+              </div>
+              Academia is typing...
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 lg:p-6 bg-white border-t border-slate-100">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask about registration, exam prep, or choosing a school..."
+            className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+          />
+          <button
+            type="submit"
+            disabled={isLoading || !input.trim()}
+            className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
+          >
+            <Send size={20} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
+  const ProfileTab = () => (
+    <div className="max-w-2xl mx-auto w-full p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="text-center">
+        <div className="relative inline-block">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white text-3xl font-bold shadow-xl mx-auto">
+            {userProfile.name[0]}
+          </div>
+          <div className="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-lg border border-slate-100 text-blue-600">
+            <Sparkles size={16} />
+          </div>
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 mt-4">Applicant Information</h2>
+        <p className="text-slate-500">Update your profile for more accurate entrance exam advice.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Full Name</label>
+          <input 
+            type="text" 
+            className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={userProfile.name}
+            onChange={(e) => setUserProfile({...userProfile, name: e.target.value})}
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Target School Type</label>
+          <input 
+            type="text" 
+            className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={userProfile.schoolType}
+            onChange={(e) => setUserProfile({...userProfile, schoolType: e.target.value})}
+            placeholder="e.g., Specialized STEM School"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Current Level</label>
+          <select 
+            className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={userProfile.year}
+            onChange={(e) => setUserProfile({...userProfile, year: e.target.value})}
+          >
+            <option>Grade 8</option>
+            <option>Grade 9</option>
+            <option>International School Year 9</option>
+            <option>Gap Year</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Primary Exam Goal</label>
+          <div className="flex gap-2 flex-wrap">
+            {['Registration Help', 'Mock Tests', 'School Selection', 'Study Schedule'].map(goal => (
+              <button 
+                key={goal}
+                onClick={() => {
+                  const goals = userProfile.goals.includes(goal) 
+                    ? userProfile.goals.filter(g => g !== goal)
+                    : [...userProfile.goals, goal];
+                  setUserProfile({...userProfile, goals});
+                }}
+                className={`px-4 py-2 rounded-full text-xs font-medium border transition-all ${
+                  userProfile.goals.includes(goal)
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                }`}
+              >
+                {goal}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+        <h3 className="text-blue-800 font-bold flex items-center gap-2 mb-2">
+          <Target size={18} />
+          Registration Alert
+        </h3>
+        <p className="text-blue-700 text-sm leading-relaxed">
+          Typically, registration for {userProfile.schoolType} begins 3-4 months before the exam date. Ensure you have your middle school transcripts and identification ready!
+        </p>
+      </div>
+    </div>
+  );
+
+  const PlannerTab = () => (
+    <div className="max-w-4xl mx-auto w-full p-6 space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Entrance Prep Roadmap</h2>
+          <p className="text-slate-500">Milestones for your high school transition.</p>
+        </div>
+        <button 
+          onClick={() => { setActiveTab('chat'); setInput("Walk me through the registration steps for high school entrance exams."); }}
+          className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-md font-medium"
+        >
+          <Sparkles size={18} />
+          Registration Guide
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <ClipboardList size={18} className="text-blue-600" />
+              Application Checklist
+            </h3>
+            <div className="space-y-3">
+              {[
+                { title: 'Online Registration Form', status: 'In Progress', color: 'blue' },
+                { title: 'Submit Recommendation Letters', status: 'Pending', color: 'orange' },
+                { title: 'Upload Past Semester Grades', status: 'Completed', color: 'emerald' }
+              ].map((task, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 cursor-pointer group transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full bg-${task.color}-500`}></div>
+                    <span className="text-slate-700 font-medium group-hover:text-blue-600">{task.title}</span>
+                  </div>
+                  <span className="text-xs text-slate-400">{task.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <BookOpen size={18} className="text-blue-600" />
+              Mock Exam Progress
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-600">Mathematics Section</span>
+                  <span className="text-blue-600">72%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: '72%' }}></div>
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-600">Literacy & Essay</span>
+                  <span className="text-emerald-600">85%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: '85%' }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden">
+            <div className="relative z-10">
+              <p className="text-blue-100 text-sm font-medium mb-1">Important Date</p>
+              <h4 className="text-xl font-bold mb-4">Registration Deadline</h4>
+              <div className="flex items-center gap-2 text-sm bg-white/20 backdrop-blur-md rounded-lg p-2">
+                <Calendar size={14} />
+                April 30th
+              </div>
+            </div>
+            <ShieldCheck className="absolute -bottom-2 -right-2 text-white/10 w-24 h-24 rotate-12" />
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-3 text-sm">Counselor Advice</h3>
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <ChevronRight size={14} className="text-blue-600" />
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Start collecting your proof of residence now. It's the most common cause of registration delays.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <ChevronRight size={14} className="text-blue-600" />
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Research 'Specialized High Schools' if you have a strong interest in Science or Art.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      <Sidebar />
+      
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="h-16 border-b border-slate-200 bg-white px-4 flex items-center justify-between lg:px-8">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 hover:bg-slate-100 rounded-lg lg:hidden"
+            >
+              <Menu size={24} />
+            </button>
+            <h1 className="text-lg font-bold text-slate-800 hidden sm:block">
+              {activeTab === 'chat' && 'High School Entrance Counseling'}
+              {activeTab === 'planner' && 'Prep Roadmap'}
+              {activeTab === 'profile' && 'Applicant Profile'}
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex flex-col items-end">
+              <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Active Session</span>
+              <span className="text-xs text-slate-500">Connected to Entrance Advisor</span>
+            </div>
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === 'chat' && <ChatTab />}
+          {activeTab === 'planner' && <PlannerTab />}
+          {activeTab === 'profile' && <ProfileTab />}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default App;
